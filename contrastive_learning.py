@@ -24,11 +24,11 @@ class Net(gluon.Block):
         with self.name_scope():
             # layers created in name_scope will inherit name space
             # from parent layer.
-            self.conv1 = nn.Conv2D(8, kernel_size=(5, 5))
+            self.conv1 = nn.Conv2D(2, kernel_size=(5, 5))
             self.pool1 = nn.MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-            self.conv2 = nn.Conv2D(8, kernel_size=(5, 5))
+            self.conv2 = nn.Conv2D(2, kernel_size=(5, 5))
             self.pool2 = nn.MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-            self.fc1 = nn.Dense(64)
+            self.fc1 = nn.Dense(16)
             self.fc2 = nn.Dense(10)  # this is equal to number of classes
 
     def forward(self, x):
@@ -50,7 +50,7 @@ ctx = [mx.gpu() if mx.test_utils.list_gpus() else mx.cpu()]
 net.initialize(mx.init.Xavier(magnitude=2.24), ctx=ctx)
 trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate': 0.03})
 
-epoch = 10
+epoch = 100
 # Use Accuracy as the evaluation metric.
 metric = mx.metric.Accuracy()
 softmax_cross_entropy_loss = gluon.loss.SoftmaxCrossEntropyLoss()
