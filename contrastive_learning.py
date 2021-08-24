@@ -139,11 +139,11 @@ class Net(gluon.Block):
     def __init__(self, **kwargs):
         super(Net, self).__init__(**kwargs)
         with self.name_scope():
-            self.conv1 = nn.Conv2D(2, kernel_size=(5, 5))
+            self.conv1 = nn.Conv2D(4, kernel_size=(5, 5))
             self.pool1 = nn.MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-            self.conv2 = nn.Conv2D(2, kernel_size=(5, 5))
+            self.conv2 = nn.Conv2D(4, kernel_size=(5, 5))
             self.pool2 = nn.MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-            self.fc1 = nn.Dense(16)
+            self.fc1 = nn.Dense(32)
             self.fc2 = nn.Dense(10)  # this is equal to number of classes
 
     def forward(self, x):
