@@ -13,7 +13,7 @@ ctx = mx.gpu() if mx.test_utils.list_gpus() else mx.cpu()
 EPS_ARR = F.array(np.array([1e-12])).as_in_context(ctx)
 
 
-def train(net, train_data, epoch=100):
+def train(net, trainer, train_data, epoch=100):
     # Use Accuracy as the evaluation metric.
     metric = mx.metric.Accuracy()
     softmax_cross_entropy_loss = gluon.loss.SoftmaxCrossEntropyLoss()
@@ -48,6 +48,7 @@ def train(net, train_data, epoch=100):
         print('training acc at epoch %d: %s=%f' % (i, name, acc))
 
 
+# TODO https://github.com/apache/incubator-mxnet/discussions/20553
 def augment_monochrome(x,
                        joint_transform,
                        noise_ampl=.2,
@@ -63,6 +64,7 @@ def augment_monochrome(x,
             F.swapaxes(x_aug[i, ...], 0, 2)
         ) + noise_ampl * np.random.normal(), 0, 2
     ) for i in range(batch_size)])
+    x_aug_ = F.broadcast_add(x_aug_, noise_ampl * F.random.normal(shape=x_aug_.shape))
     if opencv_gpu_fix:
         x_aug = x_aug_.as_in_context(ctx)
     else:
@@ -90,8 +92,7 @@ def _cosine_similarity(x, y, axis=-1):
     return x_dot_y / F.broadcast_maximum(x_norm * y_norm, EPS_ARR)
 
 
-def contrastive_pretrain(net, train_data, epoch=100):
-    print('contrastive_pretrain')
+def contrastive_pretrain(net, trainer, train_data, epoch=100):
     for i in range(epoch):
         cosine_similarity_loss = 0.
         print(f'contrastive_pretrain epoch {i}')
@@ -105,7 +106,10 @@ def contrastive_pretrain(net, train_data, epoch=100):
             with ag.record():
                 for x, y in zip(data, label):
                     _, z1 = net(x)
-                    x_aug = augment_monochrome(x, joint_transform, noise_ampl=.2, opencv_gpu_fix=True)
+                    x_aug = augment_monochrome(x, joint_transform, noise_ampl=.2,
+                                               opencv_gpu_fix=True,
+                                               # opencv_gpu_fix=False
+                                               )
                     x_aug = F.array(x_aug.asnumpy()).as_in_context(ctx)
                     _, z1aug = net(x_aug)
                     loss = 1. - _cosine_similarity(z1, z1aug)
@@ -150,49 +154,45 @@ class Net(gluon.Block):
         return out, x_last
 
 
-def get_mnist_iterators(batch_size):
-    mnist = mx.test_utils.get_mnist()
-    train_data = mx.io.NDArrayIter(mnist['train_data'], mnist['train_label'], batch_size, shuffle=True)
-    val_data = mx.io.NDArrayIter(mnist['test_data'], mnist['test_label'], batch_size)
-    return train_data, val_data
-
-
 def fix_seed(seed=33):
     mx.random.seed(seed, ctx=mx.cpu())
     mx.random.seed(seed, ctx=mx.gpu())
     np.random.seed(seed)
 
 
-if __name__ == '__main__':
+def init_net_and_data(batch_size):
     fix_seed()
-
-    batch_size = 100
-
-    train_data, val_data = get_mnist_iterators(batch_size)
-
-    # trying without contrastive pretraining
+    mnist = mx.test_utils.get_mnist()
+    train_data = mx.io.NDArrayIter(mnist['train_data'], mnist['train_label'], batch_size, shuffle=True)
+    val_data = mx.io.NDArrayIter(mnist['test_data'], mnist['test_label'], batch_size)
     fix_seed()
-
     net = Net()
     net.initialize(mx.init.Xavier(magnitude=2.24), ctx=ctx)
     trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate': 0.03})
+    return train_data, val_data, net, trainer
 
-    train(net, train_data, epoch=16)
+
+if __name__ == '__main__':
+    batch_size = 100
+
+    print('\n----------NORMAL TRAINING')
+    train_data, val_data, net, trainer = init_net_and_data(batch_size)
+
+    train(net, trainer, train_data, epoch=32)
 
     validation_metric = validate(net, val_data)
     print('validation acc: %s=%f' % validation_metric)
 
-    # now with contrastive pretraining!
-    fix_seed()
-    train_data, val_data = get_mnist_iterators(batch_size)
+    print('\n----------CONTRASTIVE PRETRAINING + NORMAL TRAINING!!!')
+    train_data, val_data, net, trainer = init_net_and_data(batch_size)
 
-    fix_seed()
-    net = Net()
-    net.initialize(mx.init.Xavier(magnitude=2.24), ctx=ctx)
-    trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate': 0.03})
+    contrastive_pretrain(net, trainer, train_data, epoch=2)
+    train(net, trainer, train_data, epoch=32)
 
-    contrastive_pretrain(net, train_data, epoch=4)
-    train(net, train_data, epoch=12)
-
-    validation_metric = validate(net, val_data)
+    validation_metric_contrastive_pretraining = validate(net, val_data)
     print('validation acc with pretraining: %s=%f' % validation_metric)
+
+    if validation_metric_contrastive_pretraining > validation_metric:
+        print('\n----------CONTRASTIVE PRETRAINING HELPED!')
+    else:
+        print('\n----------CONTRASTIVE PRETRAINING DID NOT HELP!')
