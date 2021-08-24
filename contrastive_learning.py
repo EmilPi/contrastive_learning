@@ -46,6 +46,7 @@ def train(net, trainer, train_data, epoch=100):
         # Reset evaluation result to initial state.
         metric.reset()
         print('training acc at epoch %d: %s=%f' % (i, name, acc))
+    return name, acc
 
 
 # TODO https://github.com/apache/incubator-mxnet/discussions/20553
@@ -172,27 +173,38 @@ def init_net_and_data(batch_size):
     return train_data, val_data, net, trainer
 
 
+def evaluate_final_network(net, val_data, training_metric=None):
+    training_metric_name, training_metric_val = training_metric
+    val_metric_name, val_metric_val = validate(net, val_data)
+    print(f'validation {val_metric_name}={val_metric_val}')
+    if training_metric_val and training_metric_name == val_metric_name:
+        metric_overfit = training_metric_val - val_metric_val
+        print(f'network is {"over" if metric_overfit > 0 else "under"}fitting:')
+        print(f'\t{val_metric_name}_t - {val_metric_name}_v = {round(metric_overfit, 4)}')
+    return val_metric_val
+
+
 if __name__ == '__main__':
     batch_size = 100
 
     print('\n----------NORMAL TRAINING')
     train_data, val_data, net, trainer = init_net_and_data(batch_size)
 
-    train(net, trainer, train_data, epoch=32)
+    training_metric = train(net, trainer, train_data, epoch=32)
 
-    validation_metric = validate(net, val_data)
-    print('validation acc: %s=%f' % validation_metric)
+    validation_metric_val = evaluate_final_network(net, val_data, training_metric)
 
+    #################################################################
     print('\n----------CONTRASTIVE PRETRAINING + NORMAL TRAINING!!!')
     train_data, val_data, net, trainer = init_net_and_data(batch_size)
 
     contrastive_pretrain(net, trainer, train_data, epoch=2)
-    train(net, trainer, train_data, epoch=32)
+    training_metric_contrastive_pretraining = train(net, trainer, train_data, epoch=32)
 
-    validation_metric_contrastive_pretraining = validate(net, val_data)
-    print('validation acc with pretraining: %s=%f' % validation_metric)
+    validation_metric_contrastive_pretraining_val = evaluate_final_network(net, val_data,
+                                                                           training_metric_contrastive_pretraining)
 
-    if validation_metric_contrastive_pretraining > validation_metric:
+    if validation_metric_contrastive_pretraining_val > validation_metric_val:
         print('\n----------CONTRASTIVE PRETRAINING HELPED!')
     else:
         print('\n----------CONTRASTIVE PRETRAINING DID NOT HELP!')
