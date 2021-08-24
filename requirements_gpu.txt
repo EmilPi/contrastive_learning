@@ -1,0 +1,3 @@
+numpy==1.17.4
+# this is just for reference! install mxnet package according to your cuda version
+mxnet-cu112>=1.8.0.post0
